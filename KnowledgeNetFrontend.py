@@ -56,17 +56,24 @@ class KnowledgeNetFrontend:
         relation_uni_bi_group.add_argument('--bi', action='store_true', default=False)
         parser_relation_create.set_defaults(func=self.create_relation)
 
-        # create the parser for the "relation type" command
+        # create the parser for the "relationtype" command group
+        ########################################################
         parser_relationtype = subparsers.add_parser('relationtype', help='relation type related commands')
         relationtype_subparsers = parser_relationtype.add_subparsers()
 
         # create a parser for the "relation type create" command
         parser_relationtype_create = relationtype_subparsers.add_parser('create', help='Create a new relation type')
         parser_relationtype_create.add_argument('relation_type_name', default='', nargs='?')
-        relationtype_uni_bi_group = parser_relationtype_create.add_mutually_exclusive_group()
-        relationtype_uni_bi_group.add_argument('--uni', action='store_true', default=False)
-        relationtype_uni_bi_group.add_argument('--bi', action='store_true', default=False)
+        relationtype_create_uni_bi_group = parser_relationtype_create.add_mutually_exclusive_group()
+        relationtype_create_uni_bi_group.add_argument('--uni', action='store_true', default=False)
+        relationtype_create_uni_bi_group.add_argument('--bi', action='store_true', default=False)
         parser_relationtype_create.set_defaults(func=self.create_relationtype)
+
+        # list a parser for the "relation type list" command
+        parser_relationtype_list = relationtype_subparsers.add_parser('list', help='Create a new relation type')
+        parser_relationtype_list.add_argument('--uni', action='store_true', default=True)
+        parser_relationtype_list.add_argument('--bi', action='store_true', default=True)
+        parser_relationtype_list.set_defaults(func=self.list_relationtypes)
 
         
         
@@ -76,6 +83,19 @@ class KnowledgeNetFrontend:
 
     def list_nodes(self, args):
         print(self.backend.get_all_node_names())
+
+    def list_relationtypes(self, args):
+        if args.uni:
+            print('Unidirectional relation types:')
+            self.print_line('-')
+            for uni_type in self.backend.get_uni_relationtypes():
+                print(f'{uni_type["name"]}: {uni_type["description"]}')
+            print()
+        if args.bi:
+            print('Bidirectional relation types:')
+            self.print_line('-')
+            for bi_type in self.backend.get_bi_relationtypes():
+                print(f'{bi_type["name"]}: {bi_type["description"]}')
 
     def create_node(self, args):
         name = str(args.node_name)

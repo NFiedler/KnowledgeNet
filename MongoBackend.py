@@ -191,4 +191,33 @@ class MongoBackend:
     def get_bi_relationtype_usage_number(self, relation_type_id: ObjectId) -> int:
         return self.bi_rel_coll.count({'type': relation_type_id})
 
+    def get_relations_between(self, node_1_id: ObjectId, node_2_id: ObjectId) -> Tuple[List[Dict], List[Dict]]:
+        uni_relations = self.uni_rel_coll.find({'$or': [
+            {
+                'node_from': node_1_id,
+                'node_to': node_2_id
+            },
+            {
+                'node_from': node_2_id,
+                'node_to': node_1_id
+            }
+        ]})
+        bi_relations = self.bi_rel_coll.find({'$or': [
+            {
+                'node_1': node_1_id,
+                'node_2': node_2_id
+            },
+            {
+                'node_1': node_2_id,
+                'node_2': node_1_id
+            }
+        ]})
+        return list(uni_relations), list(bi_relations)
+
+    def get_uni_relationtypes(self):
+        return list(self.uni_rel_type_coll.find())
+
+    def get_bi_relationtypes(self):
+        return list(self.bi_rel_type_coll.find())
+
 b = MongoBackend('mongodb://localhost:27017/')
