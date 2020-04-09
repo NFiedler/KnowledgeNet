@@ -1,5 +1,6 @@
 import pymongo
-
+from bson import ObjectId
+from typing import List, Set, Dict, Tuple, Optional
 
 class MongoBackend:
     def __init__(self, db_path, db_name='world'):
@@ -63,6 +64,9 @@ class MongoBackend:
     def get_node(self, node_id):
         return self.node_coll.find_one({'_id': node_id})
 
+    def get_nodes(self, node_ids):
+        return self.node_coll.find({'_id': {'$in': node_ids}})
+
     def get_relation_ids_of_node(self, node_id):
         return self.node_coll.find_one(
             {'_id': node_id},
@@ -107,6 +111,84 @@ class MongoBackend:
     def get_all_node_names(self):
         return [node['name'] for node in self.node_coll.find()]
 
+    def get_all_uni_connected_nodes(self, start_node_id, relation_type_id, stop_at: Optional[ObjectId]=None, include_direction=True, inverse_direction=False) -> List[ObjectId]:
+        visited_nodes = set()
+        current_nodes = {start_node_id}
+        if include_direction:
+            while current_nodes and (stop_at is None or stop_at in visited_nodes):
+                result = self.uni_rel_coll.find(
+                    {
+                        'node_from': {'$in': list(current_nodes)},
+                        'node_to': {'$nin': list(visited_nodes)},
+                        'type': relation_type_id
+                    },
+                    {
+                        '_id': 0,
+                        'node_to': 1
+                    }
+                    )
+                result = list(result)
+                visited_nodes |= current_nodes
+                current_nodes = set([result_elem['node_to'] for result_elem in result])
+                current_nodes -= visited_nodes
+        else:
+            while current_nodes and (stop_at is None or stop_at in visited_nodes):
+                result = self.uni_rel_coll.find(
+                    {
+                        '$or': [
+                            {'node_from': {'$in': list(current_nodes)}},
+                            {'node_to': {'$in': list(current_nodes)}}
+                        ],
+                        'node_to': {'$nin': list(visited_nodes)},
+                        'node_from': {'$nin': list(visited_nodes)},
+                        'type': relation_type_id
+                    },
+                    {
+                        '_id': 0,
+                        'node_from': 1,
+                        'node_to': 1
+                    }
+                    )
+                result = list(result)
+                visited_nodes |= current_nodes
+                current_nodes = set(
+                    [result_elem['node_from'] for result_elem in result] +
+                    [result_elem['node_to'] for result_elem in result])
+                current_nodes -= visited_nodes
+        return list(visited_nodes)
 
+    def get_all_bi_connected_nodes(self, start_node_id: ObjectId, relation_type_id: ObjectId, stop_at: Optional[ObjectId] = None) -> List[ObjectId]:
+        visited_nodes = set()
+        current_nodes = {start_node_id}
+        while current_nodes and (stop_at is None or stop_at in visited_nodes):
+            result = self.bi_rel_coll.find(
+                {
+                    '$or': [
+                        {'node_1': {'$in': list(current_nodes)}},
+                        {'node_2': {'$in': list(current_nodes)}}
+                    ],
+                    'node_1': {'$nin': list(visited_nodes)},
+                    'node_2': {'$nin': list(visited_nodes)},
+                    'type': relation_type_id
+                },
+                {
+                    '_id': 0,
+                    'node_1': 1,
+                    'node_2': 1
+                }
+                )
+            result = list(result)
+            visited_nodes |= current_nodes
+            current_nodes = set(
+                [result_elem['node_1'] for result_elem in result] +
+                [result_elem['node_2'] for result_elem in result])
+            current_nodes -= visited_nodes
+        return list(visited_nodes)
+
+    def get_uni_relationtype_usage_number(self, relation_type_id: ObjectId) -> int:
+        return self.uni_rel_coll.count({'type': relation_type_id})
+
+    def get_bi_relationtype_usage_number(self, relation_type_id: ObjectId) -> int:
+        return self.bi_rel_coll.count({'type': relation_type_id})
 
 b = MongoBackend('mongodb://localhost:27017/')

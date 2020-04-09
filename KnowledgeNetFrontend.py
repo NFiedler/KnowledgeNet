@@ -1,8 +1,10 @@
+#! /usr/bin/env python
 from MongoBackend import *
 from bson import ObjectId
 import argparse
 import sys
 import os
+
 
 class KnowledgeNetFrontend:
     def __init__(self):
@@ -33,7 +35,16 @@ class KnowledgeNetFrontend:
         parser_node_info.add_argument('node_name', default='', nargs='?')
         parser_node_info.set_defaults(func=self.node_info)
 
-        # create the parser for the "relation" command
+        # relations a parser for the "node relations" command
+        parser_node_relations = node_subparsers.add_parser('relations', help='Information on a node')
+        parser_node_relations.add_argument('node_name', default='', nargs='?')
+        node_relations_dir_ndir_group = parser_node_relations.add_mutually_exclusive_group()
+        node_relations_dir_ndir_group.add_argument('--dir', action='store_true', default=False)
+        node_relations_dir_ndir_group.add_argument('--ndir', action='store_true', default=False)
+        parser_node_relations.set_defaults(func=self.node_relations)
+
+        # create the parser for the "relation" command group
+        ####################################################
         parser_relation = subparsers.add_parser('relation', help='relation related commands')
         relation_subparsers = parser_relation.add_subparsers()
 
@@ -104,6 +115,22 @@ class KnowledgeNetFrontend:
             node = self.to_node(node)
             node = self.node_detail(node)
 
+    def node_relations(self, args):
+        node = str(args.node_name)
+        if node == '':
+            node = input('Which node do you want to learn about? ')
+        node = self.to_node(node)
+        relation_type_name = input('What is the relation type? ')
+        uni, relation_type_id = self.find_relationtype_id(relation_type_name)
+        if uni:
+            directed, not_directed = args.dir, args.ndir
+            if directed == not_directed:
+                directed = self.yes_no('Do you want to consider the relation direction? ')
+            node_ids = self.backend.get_all_uni_connected_nodes(node['_id'], relation_type_id, include_direction=directed)
+        else:
+            node_ids = self.backend.get_all_bi_connected_nodes(node['_id'], relation_type_id)
+        print([node['name'] for node in self.backend.get_nodes(node_ids)])
+
     def node_detail(self, node):
         self.print_line()
         print(node['name'])
@@ -146,9 +173,9 @@ class KnowledgeNetFrontend:
     def create_relation(self, args):
         uni, bi = args.uni, args.bi
         if uni == bi:
-            uni = self.uni_bi('Enter \"uni\" or \"bi\" to create a unidirectional or a bidirectional relation: ')
-            bi = not uni
-        rel_type = self.to_relationtype_id(input('Enter the name of the relation type: '), uni=uni)
+            uni, rel_type = self.find_relationtype_id(input('Enter the name of the relation type: '))
+        else:
+            rel_type = self.to_relationtype_id(input('Enter the name of the relation type: '), uni=uni)
         node1 = self.to_node_id(input('Enter the name of the first (origin) node: '))
         node2 = self.to_node_id(input('Enter the name of the second (target) node: '))
         if uni:
@@ -156,7 +183,6 @@ class KnowledgeNetFrontend:
         else:
             result = self.backend.add_bi_relation(node1, node2, rel_type)
         print(result)
-
 
     def to_node(self, name, exit_on_err=True):
         if type(name) == ObjectId:
@@ -190,6 +216,25 @@ class KnowledgeNetFrontend:
         # Nodes is long. This means that there are multiple nodes by that name
         return nodes[int(self.select_node(nodes))]['_id']
 
+    def find_relationtype_id(self, name, exit_on_err=True):
+        if type(name) == ObjectId:
+            return name
+        types = self.backend.list_relationtypes_by_name(name, uni=True)
+        uni_count = len(types)
+        types += self.backend.list_relationtypes_by_name(name, uni=False)
+        if not types:
+            print('There is no relation type known by the name \"{}\"'.format(name))
+            if exit_on_err:
+                print('Exiting...')
+                sys.exit()
+            return None, None
+        if len(types) == 1:
+            return (uni_count > 0), types[0]['_id']
+
+        # Nodes is long. This means that there are multiple nodes by that name
+        uni, selection = self.select_relationtype(types, uni_count)
+        return uni, types[selection]['_id']
+
     def to_relationtype_id(self, name, uni, exit_on_err=True):
         if type(name) == ObjectId:
             return name
@@ -215,13 +260,25 @@ class KnowledgeNetFrontend:
             selection = input('Enter your selection: ')
         return selection
 
-    def select_relationtype(self, types):
+    def select_relationtype(self, types, uni_count=-1):
         print('There exist multiple relation types with the name \"{}\": '.format(types[0]['name']))
+        rel_type_group = ''
         for i, type in enumerate(types):
-            print('{} - {}: {}'.format(i, type['name'], type['description']))
+            if uni_count >= 0:
+                if i < uni_count:
+                    rel_type_group = '[uni]'
+                    usage_count = ' (used in {} relations)'.format(self.backend.get_uni_relationtype_usage_number(type['_id']))
+                else:
+                    rel_type_group = '[bi]'
+                    usage_count = ' (used in {} relations)'.format(self.backend.get_bi_relationtype_usage_number(type['_id']))
+
+            print('{} - {} {}: {}{}'.format(i, type['name'], rel_type_group, type['description'], usage_count))
         selection = ''
         while not selection.isdigit() or len(types) < int(selection):
             selection = input('Enter your selection: ')
+        selection = int(selection)
+        if uni_count >= 0:
+            return (selection < uni_count), selection
         return selection
 
     def yes_no(self, answer):
