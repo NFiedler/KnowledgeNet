@@ -30,6 +30,16 @@ class MongoBackend:
             'bi_relations': []})
         return result.inserted_id
 
+    def delete_node(self, node_id: ObjectId) -> None:
+        """
+        Deletes a node and all relations to that node
+        :param node_id: The ID of the deleted node
+        """
+        relations = self.get_relation_ids_of_node(node_id)
+        self.uni_rel_coll.delete_many({'_id': {'$in': relations['in_relations'] + relations['out_relations']}})
+        self.bi_rel_coll.delete_many({'_id': {'$in': relations['bi_relations']}})
+        self.node_coll.delete_one({'_id': node_id})
+
     def add_nodes(self, node_names):
         result = self.node_coll.insert_many(
             [{

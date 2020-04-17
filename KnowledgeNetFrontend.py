@@ -1,17 +1,70 @@
 #! /usr/bin/env python
 from MongoBackend import *
 from bson import ObjectId
+
+from enum import IntEnum
+from typing import Union, List, Dict
 import argparse
 import sys
 import os
 
 
+class MenuAction(IntEnum):
+    DELETE_NODE = 0
+    NODE_DETAIL = 1
+    ASK = 2
+
+    HELP = 98
+    QUIT = 99
+
+class ParamsType(IntEnum):
+    NODE = 0
+    RELATION = 1
+    NONE = 99
+
+
 class KnowledgeNetFrontend:
+
     def __init__(self):
         self.rows, self.columns = os.popen('stty size', 'r').read().split()
 
+        self.node_menu_action_mappings = [
+            {
+                'name': 'Delete',
+                'key': 'd',
+                'description': 'delete the current node',
+                'action': MenuAction.DELETE_NODE,
+                'required_params': [],
+                'optional_params': [ParamsType.NODE],
+            },
+            {
+                'name': 'Detail',
+                'key': '+',
+                'description': 'More details on a specific node',
+                'action': MenuAction.NODE_DETAIL,
+                'required_params': [ParamsType.NODE],
+                'optional_params': [],
+            },
+            {
+                'name': 'Help',
+                'key': 'h',
+                'description': 'Print menu action help',
+                'action': MenuAction.HELP,
+                'required_params': [],
+                'optional_params': [],
+            },
+            {
+                'name': 'Quit',
+                'key': 'q',
+                'description': 'Quit the menu',
+                'action': MenuAction.QUIT,
+                'required_params': [],
+                'optional_params': [],
+            }
+        ]
+
         self.backend = b
-        parser = argparse.ArgumentParser(prog='PROG')
+        parser = argparse.ArgumentParser(prog='KnowledgeNet UI')
         # parser.add_argument('--foo', action='store_true', help='foo help')
         subparsers = parser.add_subparsers(help='command groups')
 
@@ -131,9 +184,7 @@ class KnowledgeNetFrontend:
         if node == '':
             node = input('Which node do you want to learn about? ')
         # handle follows
-        while node is not None:
-            node = self.to_node(node)
-            node = self.node_detail(node)
+        self.node_detail_loop(node)
 
     def node_relations(self, args):
         node = str(args.node_name)
@@ -149,46 +200,107 @@ class KnowledgeNetFrontend:
             node_ids = self.backend.get_all_uni_connected_nodes(node['_id'], relation_type_id, include_direction=directed)
         else:
             node_ids = self.backend.get_all_bi_connected_nodes(node['_id'], relation_type_id)
-        print([node['name'] for node in self.backend.get_nodes(node_ids)])
-
-    def node_detail(self, node):
+        nodes: List[Dict] = list(self.backend.get_nodes(node_ids))
         self.print_line()
-        print(node['name'])
+        print(f'Nodes connected to {node["name"]}: ')
         self.print_line('-')
-        relation_info = self.backend.get_relation_info_of_node(node['_id'])
+        for i, node in enumerate(nodes):
+            print(f'{i} - {node["name"]}: {node["description"]}')
+        print()
+        selection = input('If you want to see a node in detail, enter the number in front of it. Otherwise type \'q\'.\n')
+        follow_node = None
+        while follow_node is None:
+            selection = selection.lower()
+            if selection == 'q':
+                return None
+            if selection.isdigit() and int(selection) < len(nodes):
+                follow_node = list(nodes)[int(selection)]['_id']
+            else:
+                selection = input('Your input was invalid. If you want to  see a node in detail, enter the number in front of it. Otherwise type \'q\'.\n')
+        self.node_detail_loop(follow_node)
 
+    def node_detail_loop(self, init_node: Union[Dict, str, ObjectId]):
+        node = init_node
+        action = MenuAction.NODE_DETAIL
+        while action is not MenuAction.QUIT:
+            node = self.to_node(node)
+            if action == MenuAction.NODE_DETAIL:
+                node, action = self.node_detail(node)
+            elif action == MenuAction.ASK:
+                node, action = self.node_detail(node, ask=True)
+            elif action == MenuAction.DELETE_NODE:
+                if self.yes_no('Do you really want to delete this node and all connected relations? '):
+                    self.backend.delete_node(node['_id'])
+                    action = MenuAction.QUIT
+                else:
+                    action = MenuAction.NODE_DETAIL
+            elif action == MenuAction.HELP:
+                self.print_menu_action_help()
+                action = MenuAction.ASK
+
+    def node_detail(self, node: dict, ask: bool = False) -> Tuple[Optional[int], int]:
+
+        relation_info = self.backend.get_relation_info_of_node(node['_id'])
         relation_counter = 0
         related_node_ids = [rel['from']['_id'] for rel in relation_info['in_relations']] + \
                            [rel['to']['_id'] for rel in relation_info['out_relations']] + \
                            [rel['with']['_id'] for rel in relation_info['bi_relations']]
-        for key in node.keys():
-            if 'relations' not in key:
-                print('{}: {}'.format(key, node[key]))
+        if not ask:
+            self.print_line()
+            print(node['name'])
+            self.print_line('-')
+            for key in node.keys():
+                if 'relations' not in key:
+                    print('{}: {}'.format(key, node[key]))
         if relation_info['in_relations']:
-            print('in_relations: ')
+            if not ask:
+                print('in_relations: ')
             for relation in relation_info['in_relations']:
-                print('\t{} - \"{}\" from \"{}\"'.format(relation_counter, relation['type']['name'], relation['from']['name']))
+                if not ask:
+                    print('\t{} - \"{}\" from \"{}\"'.format(
+                        relation_counter,
+                        relation['type']['name'],
+                        relation['from']['name']))
                 relation_counter += 1
         if relation_info['out_relations']:
-            print('out_relations: ')
+            if not ask:
+                print('out_relations: ')
             for relation in relation_info['out_relations']:
-                print('\t{} - \"{}\" to \"{}\"'.format(relation_counter, relation['type']['name'], relation['to']['name']))
+                if not ask:
+                    print('\t{} - \"{}\" to \"{}\"'.format(
+                        relation_counter,
+                        relation['type']['name'],
+                        relation['to']['name']))
                 relation_counter += 1
         if relation_info['bi_relations']:
-            print('bi_relations: ')
+            if not ask:
+                print('bi_relations: ')
             for relation in relation_info['bi_relations']:
-                print('\t{} - \"{}\" with \"{}\"'.format(relation_counter, relation['type']['name'], relation['with']['name']))
+                if not ask:
+                    print('\t{} - \"{}\" with \"{}\"'.format(
+                        relation_counter,
+                        relation['type']['name'],
+                        relation['with']['name']))
                 relation_counter += 1
-        if relation_counter == 0:
-            return None
-        selection = input('If you want to follow a relation, enter the number in front of it. Otherwise type \'q\'.\n')
+        # if relation_counter == 0:
+        #     return None
+
+        # to be re-usable in case of invalid input
+        follow_sentence = 'If you want to follow a relation, enter the number in front of it. Type \'q\' to quit. For help type \'?\'.\n-> '
+        selection = input(follow_sentence)
         while True:
             selection = selection.lower()
+            selection = selection.replace(' ', '')
             if selection == 'q':
-                return None
-            if selection.isdigit() and int(selection) <= relation_counter:
-                return related_node_ids[int(selection)]
-            selection = input('Your input was invalid. If you want to follow a relation, enter the number in front of it. Otherwise type \'q\'.\n')
+                return None, MenuAction.QUIT
+            if selection == 'd':
+                return node['_id'], MenuAction.DELETE_NODE
+            if selection == '?':
+                return node['_id'], MenuAction.HELP
+            if (selection.isdigit() and int(selection) < relation_counter) or \
+                    (selection[0] == '+' and selection[1:].isdigit() and int(selection[1:]) < relation_counter):
+                return related_node_ids[int(selection)], MenuAction.NODE_DETAIL
+            selection = input('Your input was invalid. ' + follow_sentence)
             
     def create_relation(self, args):
         uni, bi = args.uni, args.bi
@@ -327,7 +439,11 @@ class KnowledgeNetFrontend:
             else:
                 print('Please respond with \'uni\' or \'bi\'')
 
-    def print_line(self, char='#'):
+    def print_menu_action_help(self):
+        for action in self.node_menu_action_mappings:
+            print(f"{action['key']} - {action['name']}: {action['description']}")
+
+    def print_line(self, char='#') -> None:
         print(char * int(self.columns))
 
 
