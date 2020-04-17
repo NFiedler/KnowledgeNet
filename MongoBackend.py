@@ -77,7 +77,13 @@ class MongoBackend:
     def get_nodes(self, node_ids):
         return self.node_coll.find({'_id': {'$in': node_ids}})
 
-    def get_relation_ids_of_node(self, node_id):
+    def get_relation_ids_of_node(self, node_id: ObjectId) -> Dict:
+        """
+        Returns a dictionary of lists of relations ('in_relations', 'out_relations' and 'bi_relations'
+        of a certain node.
+        :param node_id: The ID of the node.
+        :return: dictionary of lists of relations ('in_relations', 'out_relations' and 'bi_relations' of the node.
+        """
         return self.node_coll.find_one(
             {'_id': node_id},
             {'in_relations': 1, 'out_relations': 1, 'bi_relations': 1})
@@ -224,10 +230,19 @@ class MongoBackend:
         ]})
         return list(uni_relations), list(bi_relations)
 
-    def get_uni_relationtypes(self):
-        return list(self.uni_rel_type_coll.find())
+    def get_uni_relationtypes(self, relation_ids: Optional[List[ObjectId]] = None):
+        if relation_ids is None:
+            return list(self.uni_rel_type_coll.find())
+        return self.uni_rel_type_coll.find({
+            '_id': {'$in': relation_ids}
+        })
 
-    def get_bi_relationtypes(self):
-        return list(self.bi_rel_type_coll.find())
+    def get_bi_relationtypes(self, relation_ids: Optional[List[ObjectId]] = None):
+        if relation_ids is None:
+            return list(self.bi_rel_type_coll.find())
+        return list(self.bi_rel_type_coll.find({
+            '_id': {'$in': relation_ids}
+        }))
+
 
 b = MongoBackend('mongodb://localhost:27017/')

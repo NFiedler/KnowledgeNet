@@ -316,9 +316,28 @@ class KnowledgeNetFrontend:
             result = self.backend.add_bi_relation(node1, node2, rel_type)
         print(result)
 
-    def to_node(self, name, exit_on_err=True):
+    def relations_between(self, args):
+        node_1_id = self.to_node_id(input('Enter the name of the first node: '))
+        node_2_id = self.to_node_id(input('Enter the name of the second node: '))
+        uni_relations, bi_relations = self.backend.get_relations_between(node_1_id, node_2_id)
+        print(list(zip(self.backend.get_bi_relationtypes([rel['_id'] for rel in bi_relations]), bi_relations)))
+        if args.uni:
+            print('Unidirectional relations:')
+            self.print_line('-')
+            for uni_relation in zip(self.backend.get_uni_relationtypes([rel['_id'] for rel in uni_relations]), uni_relations):
+                print(f'{uni_relation[0]["name"]}: {uni_relation[1]["id"]}')
+            print()
+        if args.bi:
+            print('Bidirectional relations:')
+            self.print_line('-')
+            for bi_relation in zip(self.backend.get_bi_relationtypes([rel['_id'] for rel in bi_relations]), bi_relations):
+                print(f'{bi_relation[0]["name"]}: {bi_relation[1]["id"]}')
+
+    def to_node(self, name: Union[str, ObjectId, Dict], exit_on_err: bool = True) -> Dict:
         if type(name) == ObjectId:
             return self.backend.get_node(name)
+        if type(name) == dict:
+            return name
         nodes = self.backend.list_nodes_by_name(name)
         if not nodes:
             print('There is no node known by the name \"{}\"'.format(name))
@@ -332,7 +351,10 @@ class KnowledgeNetFrontend:
         # Nodes is long. This means that there are multiple nodes by that name
         return nodes[int(self.select_node(nodes))]
 
-    def to_node_id(self, name, exit_on_err=True):
+    def to_node_id(self, name: Union[str, ObjectId, Dict], exit_on_err: bool = True) -> ObjectId:
+        # TODO: include id in query
+        if type(name) == dict:
+            return name['_id']
         if type(name) == ObjectId:
             return name
         nodes = self.backend.list_nodes_by_name(name)
@@ -348,9 +370,15 @@ class KnowledgeNetFrontend:
         # Nodes is long. This means that there are multiple nodes by that name
         return nodes[int(self.select_node(nodes))]['_id']
 
-    def find_relationtype_id(self, name, exit_on_err=True):
+    def find_relationtype_id(self, name: Union[ObjectId, str], exit_on_err: bool = True) -> Tuple[Optional[bool], Optional[ObjectId]]:
         if type(name) == ObjectId:
-            return name
+            if self.backend.uni_rel_type_coll.find({'_id': name}).limit(1).size():
+                uni = True
+            elif self.backend.bi_rel_type_coll.find({'_id': name}).limit(1).size():
+                uni = False
+            else:
+                uni = None
+            return uni, name
         types = self.backend.list_relationtypes_by_name(name, uni=True)
         uni_count = len(types)
         types += self.backend.list_relationtypes_by_name(name, uni=False)
@@ -367,7 +395,7 @@ class KnowledgeNetFrontend:
         uni, selection = self.select_relationtype(types, uni_count)
         return uni, types[selection]['_id']
 
-    def to_relationtype_id(self, name, uni, exit_on_err=True):
+    def to_relationtype_id(self, name: Union[ObjectId, str], uni: bool, exit_on_err: bool = True) -> ObjectId:
         if type(name) == ObjectId:
             return name
         types = self.backend.list_relationtypes_by_name(name, uni=uni)
@@ -383,16 +411,16 @@ class KnowledgeNetFrontend:
         # Nodes is long. This means that there are multiple nodes by that name
         return types[int(self.select_relationtype(types))]['_id']
 
-    def select_node(self, nodes):
+    def select_node(self, nodes: List[Dict]) -> int:
         print('There exist multiple nodes with the name \"{}\": '.format(nodes[0]['name']))
         for i, node in enumerate(nodes):
             print('{} - {}: {}'.format(i, node['name'], node['description']))
         selection = ''
-        while not selection.isdigit() or len(nodes) < int(selection):
+        while not selection.isdigit() or len(nodes) <= int(selection):
             selection = input('Enter your selection: ')
-        return selection
+        return int(selection)
 
-    def select_relationtype(self, types, uni_count=-1):
+    def select_relationtype(self, types: List[dict], uni_count=-1):
         print('There exist multiple relation types with the name \"{}\": '.format(types[0]['name']))
         rel_type_group = ''
         for i, type in enumerate(types):
@@ -413,7 +441,7 @@ class KnowledgeNetFrontend:
             return (selection < uni_count), selection
         return selection
 
-    def yes_no(self, answer):
+    def yes_no(self, answer: str) -> bool:
         yes = {'yes', 'y', 'ye', ''}
         no = {'no', 'n'}
 
@@ -426,7 +454,7 @@ class KnowledgeNetFrontend:
             else:
                 print('Please respond with \'yes\' or \'no\'')
 
-    def uni_bi(self, answer):
+    def uni_bi(self, answer) -> bool:
         uni = {'u', 'uni'}
         bi = {'b', 'bi'}
 
