@@ -77,6 +77,12 @@ class MongoBackend:
     def get_nodes(self, node_ids):
         return self.node_coll.find({'_id': {'$in': node_ids}})
 
+    def get_relation_type_name(self, rel_type_id: ObjectId, uni: bool) -> str:
+        if uni:
+            return self.uni_rel_type_coll.find_one({'_id': rel_type_id}, {'name': 1})['name']
+        else:
+            return self.bi_rel_coll.find_one({'_id': rel_type_id}, {'name': 1})['name']
+
     def get_relation_ids_of_node(self, node_id: ObjectId) -> Dict:
         """
         Returns a dictionary of lists of relations ('in_relations', 'out_relations' and 'bi_relations'

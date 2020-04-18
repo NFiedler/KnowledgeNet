@@ -13,6 +13,7 @@ class MenuAction(IntEnum):
     DELETE_NODE = 0
     NODE_DETAIL = 1
     ASK = 2
+    CREATE_RELATION = 3
 
     HELP = 98
     QUIT = 99
@@ -46,8 +47,16 @@ class KnowledgeNetFrontend:
                 'optional_params': [],
             },
             {
+                'name': 'Create Relation',
+                'key': 'r',
+                'description': 'Add a new relation to the node',
+                'action': MenuAction.CREATE_RELATION,
+                'required_params': [],
+                'optional_params': [ParamsType.NODE],
+            },
+            {
                 'name': 'Help',
-                'key': 'h',
+                'key': '?',
                 'description': 'Print menu action help',
                 'action': MenuAction.HELP,
                 'required_params': [],
@@ -228,6 +237,9 @@ class KnowledgeNetFrontend:
                 node, action = self.node_detail(node)
             elif action == MenuAction.ASK:
                 node, action = self.node_detail(node, ask=True)
+            elif action == MenuAction.CREATE_RELATION:
+                self.create_relation(node1=node)
+                action = MenuAction.NODE_DETAIL
             elif action == MenuAction.DELETE_NODE:
                 if self.yes_no('Do you really want to delete this node and all connected relations? '):
                     self.backend.delete_node(node['_id'])
@@ -293,6 +305,8 @@ class KnowledgeNetFrontend:
             selection = selection.replace(' ', '')
             if selection == 'q':
                 return None, MenuAction.QUIT
+            if selection == 'r':
+                return node['_id'], MenuAction.CREATE_RELATION
             if selection == 'd':
                 return node['_id'], MenuAction.DELETE_NODE
             if selection == '?':
@@ -302,14 +316,29 @@ class KnowledgeNetFrontend:
                 return related_node_ids[int(selection)], MenuAction.NODE_DETAIL
             selection = input('Your input was invalid. ' + follow_sentence)
             
-    def create_relation(self, args):
-        uni, bi = args.uni, args.bi
-        if uni == bi:
+    def create_relation(self, args=None, node1: Dict = None, node2: Dict = None):
+        if args is None:
             uni, rel_type = self.find_relationtype_id(input('Enter the name of the relation type: '))
         else:
-            rel_type = self.to_relationtype_id(input('Enter the name of the relation type: '), uni=uni)
-        node1 = self.to_node_id(input('Enter the name of the first (origin) node: '))
-        node2 = self.to_node_id(input('Enter the name of the second (target) node: '))
+            uni, bi = args.uni, args.bi
+            if uni == bi:
+                uni, rel_type = self.find_relationtype_id(input('Enter the name of the relation type: '))
+            else:
+                rel_type = self.to_relationtype_id(input('Enter the name of the relation type: '), uni=uni)
+        if node1 is None:
+            node1 = self.to_node_id(input('Enter the name of the first (origin) node: '))
+            node2 = self.to_node_id(input('Enter the name of the second (target) node: '))
+        elif uni:
+            if self.in_out(f"Is the new {self.backend.get_relation_type_name(rel_type, uni)}-relation incoming or outgoing to the current node ({node1['name']})? "):
+                node2 = node1['_id']
+                node1 = self.to_node_id(input('Enter the name of the origin node: '))
+            else:
+                node1 = node1['_id']
+                node2 = self.to_node_id(input('Enter the name of the target node: '))
+        else:
+            node1 = node1['_id']
+            node2 = self.to_node_id(input('Enter the name of the other node: '))
+
         if uni:
             result = self.backend.add_uni_relation(node1, node2, rel_type)
         else:
@@ -466,6 +495,19 @@ class KnowledgeNetFrontend:
                 return False
             else:
                 print('Please respond with \'uni\' or \'bi\'')
+
+    def in_out(self, answer) -> bool:
+        in_words = {'i', 'in'}
+        out_words = {'o', 'out'}
+
+        while True:
+            choice = input(answer).lower()
+            if choice in in_words:
+                return True
+            elif choice in out_words:
+                return False
+            else:
+                print('Please respond with \'in\' or \'out\'')
 
     def print_menu_action_help(self):
         for action in self.node_menu_action_mappings:
