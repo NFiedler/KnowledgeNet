@@ -14,6 +14,7 @@ class MenuAction(IntEnum):
     NODE_DETAIL = 1
     ASK = 2
     CREATE_RELATION = 3
+    CREATE_NODE = 4
 
     HELP = 98
     QUIT = 99
@@ -45,6 +46,14 @@ class KnowledgeNetFrontend:
                 'action': MenuAction.NODE_DETAIL,
                 'required_params': [ParamsType.NODE],
                 'optional_params': [],
+            },
+            {
+                'name': 'Create Node',
+                'key': 'n',
+                'description': 'Add a new node',
+                'action': MenuAction.CREATE_NODE,
+                'required_params': [],
+                'optional_params': [ParamsType.NODE],
             },
             {
                 'name': 'Create Relation',
@@ -159,9 +168,11 @@ class KnowledgeNetFrontend:
             for bi_type in self.backend.get_bi_relationtypes():
                 print(f'{bi_type["name"]}: {bi_type["description"]}')
 
-    def create_node(self, args):
-        name = str(args.node_name)
-        print(name)
+    def create_node(self, args=None):
+        if args is not None:
+            name = str(args.node_name)
+        else:
+            name = ''
         if name == '':
             name = input('Enter the name of the new node: ')
         description = ''
@@ -169,6 +180,7 @@ class KnowledgeNetFrontend:
             description = input('Enter the description of the new node: ')
         result = self.backend.add_node(name, description)
         print(result)
+        return result, MenuAction.NODE_DETAIL
 
     def create_relationtype(self, args):
         uni, bi = args.uni, args.bi
@@ -237,6 +249,8 @@ class KnowledgeNetFrontend:
                 node, action = self.node_detail(node)
             elif action == MenuAction.ASK:
                 node, action = self.node_detail(node, ask=True)
+            elif action == MenuAction.CREATE_NODE:
+                node, action = self.create_node()
             elif action == MenuAction.CREATE_RELATION:
                 self.create_relation(node1=node)
                 action = MenuAction.NODE_DETAIL
@@ -305,6 +319,8 @@ class KnowledgeNetFrontend:
             selection = selection.replace(' ', '')
             if selection == 'q':
                 return None, MenuAction.QUIT
+            if selection == 'n':
+                return node['_id'], MenuAction.CREATE_NODE
             if selection == 'r':
                 return node['_id'], MenuAction.CREATE_RELATION
             if selection == 'd':
