@@ -385,7 +385,7 @@ class KnowledgeNetFrontend:
             for bi_relation in zip(self.backend.get_bi_relationtypes([rel['_id'] for rel in bi_relations]), bi_relations):
                 print(f'{bi_relation[0]["name"]}: {bi_relation[1]["id"]}')
 
-    def to_node(self, name: Union[str, ObjectId, Dict], exit_on_err: bool = True) -> Dict:
+    def to_node(self, name: Union[str, ObjectId, Dict], exit_on_err: bool = True) -> Optional[Dict]:
         if type(name) == ObjectId:
             return self.backend.get_node(name)
         if type(name) == dict:
@@ -410,6 +410,8 @@ class KnowledgeNetFrontend:
         if type(name) == ObjectId:
             return name
         nodes = self.backend.list_nodes_by_name(name)
+        if not nodes:
+            nodes
         if not nodes:
             print('There is no node known by the name \"{}\"'.format(name))
             if exit_on_err:

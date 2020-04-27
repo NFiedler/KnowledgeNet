@@ -105,7 +105,10 @@ class MongoBackend:
             'bi_relations': self.bi_rel_coll.find({'_id': {'$in': relations['bi_relations']}})
         }
 
-    def list_nodes_by_name(self, node_name):
+
+    def list_nodes_by_name(self, node_name:str, sloppy: bool = False):
+        if sloppy:
+            return list(self.node_coll.find({'name': {'$regex': node_name, '$options': 'i'}}))
         return list(self.node_coll.find({'name': node_name}))
 
     def list_relationtypes_by_name(self, relation_type_name, uni):
