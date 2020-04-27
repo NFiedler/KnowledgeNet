@@ -282,3 +282,13 @@ class MongoBackend:
 
 
 b = MongoBackend('mongodb://localhost:27017/')
+
+# TODO: virtual relations (cached)
+# TODO: required/optional relations together with other relations -> prompt when creating a new one
+# TODO; fix relation between
+# TODO: more options in node info view
+# TODO: mark relation types as transitional
+# TODO: values on relations and relation types
+# TODO: probabilistic relations
+# TODO: reflexive_check finish
+# TODO: elements as classes
