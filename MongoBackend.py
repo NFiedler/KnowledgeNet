@@ -1,6 +1,7 @@
 import pymongo
 from bson import ObjectId
 from typing import List, Set, Dict, Tuple, Optional
+import KnowledgeNetExceptions
 
 class MongoBackend:
     def __init__(self, db_path, db_name='world'):
@@ -65,7 +66,9 @@ class MongoBackend:
         new_relation = self.bi_rel_coll.insert_one({
             'type': relation_type_id,
             'node_1': node_1_id,
-            'node_2': node_2_id})
+            'node_2': node_2_id,
+            'is_uni': False
+        })
         relation_id = new_relation.inserted_id
         self.node_coll.update_one({'_id': node_1_id}, {'$push': {'bi_relations': relation_id}})
         self.node_coll.update_one({'_id': node_2_id}, {'$push': {'bi_relations': relation_id}})

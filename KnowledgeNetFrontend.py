@@ -127,6 +127,13 @@ class KnowledgeNetFrontend:
         relation_uni_bi_group.add_argument('--bi', action='store_true', default=False)
         parser_relation_create.set_defaults(func=self.create_relation)
 
+        # create a parser for the "relation between" command
+        parser_relation_between = relation_subparsers.add_parser('between', help='Create a new relation')
+        # parser_relation_between.add_argument('relation_name', default='', nargs='?')
+        parser_relation_between.add_argument('--uni', action='store_true', default=True)
+        parser_relation_between.add_argument('--bi', action='store_true', default=True)
+        parser_relation_between.set_defaults(func=self.relations_between)
+
         # create the parser for the "relationtype" command group
         ########################################################
         parser_relationtype = subparsers.add_parser('relationtype', help='relation type related commands')
