@@ -13,12 +13,26 @@ class MongoBackend:
         self.uni_rel_type_coll = self.db['uni_relation_types']
         self.bi_rel_type_coll = self.db['bi_relation_types']
 
-    def add_uni_rel_type(self, type_name, type_description=''):
-        result = self.uni_rel_type_coll.insert_one({'name': type_name, 'description': type_description, 'values': {}})
+    def add_uni_rel_type(self, type_name: str, type_description: str = '', reflexive: bool = False):
+        result = self.uni_rel_type_coll.insert_one(
+            {
+                'name': type_name,
+                'description': type_description,
+                'values': {},
+                'is_uni': True,
+                'reflexive': reflexive,
+            })
         return result.inserted_id
 
-    def add_bi_rel_type(self, type_name, type_description=''):
-        result = self.bi_rel_type_coll.insert_one({'name': type_name, 'description': type_description, 'values': {}})
+    def add_bi_rel_type(self, type_name: str, type_description: str = '', reflexive: bool = False):
+        result = self.bi_rel_type_coll.insert_one(
+            {
+                'name': type_name,
+                'description': type_description,
+                'values': {},
+                'is_uni': False,
+                'reflexive': reflexive,
+            })
         return result.inserted_id
 
     def add_node(self, node_name, node_description=''):
@@ -53,16 +67,26 @@ class MongoBackend:
         return result.inserted_ids
 
     def add_uni_relation(self, node_from_id, node_to_id, relation_type_id):
+        if node_from_id == node_to_id and not self.uni_rel_type_coll.find_one({'_id': relation_type_id})['reflexive']:
+            raise KnowledgeNetExceptions.ReflexiveException(
+                'Tried to apply a reflexive relation of non-reflexive relation type!'
+            )
         new_relation = self.uni_rel_coll.insert_one({
             'type': relation_type_id,
             'node_from': node_from_id,
-            'node_to': node_to_id})
+            'node_to': node_to_id,
+            'is_uni': True
+        })
         relation_id = new_relation.inserted_id
         self.node_coll.update_one({'_id': node_from_id}, {'$push': {'out_relations': relation_id}})
         self.node_coll.update_one({'_id': node_to_id}, {'$push': {'in_relations': relation_id}})
         return relation_id
 
     def add_bi_relation(self, node_1_id, node_2_id, relation_type_id):
+        if node_1_id == node_2_id and not self.bi_rel_type_coll.find_one({'_id': relation_type_id})['reflexive']:
+            raise KnowledgeNetExceptions.ReflexiveException(
+                'Tried to apply a reflexive relation of non-reflexive relation type!'
+            )
         new_relation = self.bi_rel_coll.insert_one({
             'type': relation_type_id,
             'node_1': node_1_id,
