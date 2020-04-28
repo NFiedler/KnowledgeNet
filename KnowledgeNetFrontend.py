@@ -18,6 +18,7 @@ class MenuAction(IntEnum):
     ASK = 2
     CREATE_RELATION = 3
     CREATE_NODE = 4
+    CREATE_RELATION_TYPE = 5
 
     HELP = 98
     QUIT = 99
@@ -65,6 +66,14 @@ class KnowledgeNetFrontend:
                 'action': MenuAction.CREATE_RELATION,
                 'required_params': [],
                 'optional_params': [ParamsType.NODE],
+            },
+            {
+                'name': 'Create Relation Type',
+                'key': 't',
+                'description': 'Add a new relation type',
+                'action': MenuAction.CREATE_RELATION_TYPE,
+                'required_params': [],
+                'optional_params': [],
             },
             {
                 'name': 'Help',
@@ -188,26 +197,32 @@ class KnowledgeNetFrontend:
         description = ''
         if self.yes_no('Do you want to add a description? '):
             description = input('Enter the description of the new node: ')
-        result = self.backend.add_node(name, description)
-        print(result)
+        result = self.backend.add_node(Node(name=name, description=description))
         return result, MenuAction.NODE_DETAIL
 
-    def create_relationtype(self, args):
-        uni, bi = args.uni, args.bi
+    def create_relationtype(self, args=None):
+        if args:
+            uni, bi = args.uni, args.bi
+            name = str(args.relation_type_name)
+        else:
+            uni = True
+            bi = True
+            name = ''
         if uni == bi:
             uni = self.uni_bi('Enter \"uni\" or \"bi\" to create a unidirectional or a bidirectional relation type: ')
             bi = not uni
 
-        name = str(args.relation_type_name)
         if name == '':
             name = input('Enter the name of the new {}directional relation type: '.format('uni' if uni else 'bi'))
         description = ''
-        if self.yes_no('Do you want to add a description? '):
+        if self.yes_no('Do you want to add a description? [Y/n] '):
             description = input('Enter the description of the new relation type: ')
-        if uni:
-            result = self.backend.add_uni_rel_type(name, description)
-        else:
-            result = self.backend.add_bi_rel_type(name, description)
+        reflexive = self.yes_no('Is the new relation type reflexive (allows loops)? [Y/n] ')
+        result = self.backend.add_rel_type(RelationType(
+            name=name,
+            uni=uni,
+            description=description,
+            reflexive=reflexive))
         print(result)
 
     def node_info(self, args):
