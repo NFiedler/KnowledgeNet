@@ -43,10 +43,18 @@ class MongoBackend:
         return result.inserted_ids
 
     def add_relation(self, relation: Union[UniRelation, BiRelation]):
+        if relation.is_uni:
+            relation_type = RelationType.from_dict(self.uni_rel_type_coll.find_one({'_id': relation.type}))
+        else:
+            relation_type = RelationType.from_dict(self.bi_rel_type_coll.find_one({'_id': relation.type}))
 
-        if relation.node_1 == relation.node_2 and not self.bi_rel_type_coll.find_one({'_id': relation.type})['reflexive']:
+        if relation.node_1 == relation.node_2 and not relation_type.reflexive:
             raise KnowledgeNetExceptions.ReflexiveException(
                 'Tried to apply a reflexive relation of non-reflexive relation type!'
+            )
+        if relation.probability != 1.0 and not relation_type.probabilistic:
+            raise KnowledgeNetExceptions.ProbabilisticException(
+                f'Tried to add an uncertain relation with non-probabilistic type (\"{relation_type.name}\")!'
             )
         if relation.is_uni:
             new_relation = self.uni_rel_coll.insert_one(relation.to_dict())
@@ -90,7 +98,6 @@ class MongoBackend:
             'out_relations': Relation.from_dict_list(self.uni_rel_coll.find({'_id': {'$in': relations['out_relations']}})),
             'bi_relations': Relation.from_dict_list(self.bi_rel_coll.find({'_id': {'$in': relations['bi_relations']}}))
         }
-
 
     def list_nodes_by_name(self, node_name:str, sloppy: bool = False):
         if sloppy:
@@ -254,3 +261,4 @@ b = MongoBackend('mongodb://localhost:27017/')
 # TODO: probabilistic relations
 # TODO: reflexive_check finish
 # TODO: elements as classes
+# TODO: differ between class nodes and Object Nodes
