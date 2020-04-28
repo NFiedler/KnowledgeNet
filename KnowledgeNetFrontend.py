@@ -218,10 +218,12 @@ class KnowledgeNetFrontend:
         if self.yes_no('Do you want to add a description? [Y/n] '):
             description = input('Enter the description of the new relation type: ')
         reflexive = self.yes_no('Is the new relation type reflexive (allows loops)? [Y/n] ')
+        probabilistic = self.yes_no('Is the new relation type probabilistic (allows uncertain relations)? [Y/n] ')
         result = self.backend.add_rel_type(RelationType(
             name=name,
             uni=uni,
             description=description,
+            probabilistic=probabilistic,
             reflexive=reflexive))
         print(result)
 
@@ -314,30 +316,42 @@ class KnowledgeNetFrontend:
                 print('in_relations: ')
             for relation in relation_info['in_relations']:
                 if not ask:
-                    print('\t{} - \"{}\" from \"{}\"'.format(
+                    prob_str = ''
+                    if relation['type'].probabilistic:
+                        prob_str = f'({relation["prob"]})'
+                    print('\t{} - \"{}\" from \"{}\" {}'.format(
                         relation_counter,
                         relation['type'].name,
-                        relation['from'].name))
+                        relation['from'].name,
+                        prob_str))
                 relation_counter += 1
         if relation_info['out_relations']:
             if not ask:
                 print('out_relations: ')
             for relation in relation_info['out_relations']:
                 if not ask:
-                    print('\t{} - \"{}\" to \"{}\"'.format(
+                    prob_str = ''
+                    if relation['type'].probabilistic:
+                        prob_str = f'({relation["prob"]})'
+                    print('\t{} - \"{}\" to \"{}\" {}'.format(
                         relation_counter,
                         relation['type'].name,
-                        relation['to'].name))
+                        relation['to'].name,
+                        prob_str))
                 relation_counter += 1
         if relation_info['bi_relations']:
             if not ask:
                 print('bi_relations: ')
             for relation in relation_info['bi_relations']:
                 if not ask:
-                    print('\t{} - \"{}\" with \"{}\"'.format(
+                    prob_str = ''
+                    if relation['type'].probabilistic:
+                        prob_str = f'({relation["prob"]})'
+                    print('\t{} - \"{}\" with \"{}\" {}'.format(
                         relation_counter,
                         relation['type'].name,
-                        relation['with'].name))
+                        relation['with'].name,
+                        prob_str))
                 relation_counter += 1
         # if relation_counter == 0:
         #     return None
@@ -367,18 +381,18 @@ class KnowledgeNetFrontend:
             
     def create_relation(self, args=None, node1: Node = None, node2: Node = None):
         if args is None:
-            uni, rel_type = self.find_relationtype_id(input('Enter the name of the relation type: '))
+            uni, rel_type = self.find_relationtype(input('Enter the name of the relation type: '))
         else:
             uni, bi = args.uni, args.bi
             if uni == bi:
-                uni, rel_type = self.find_relationtype_id(input('Enter the name of the relation type: '))
+                uni, rel_type = self.find_relationtype(input('Enter the name of the relation type: '))
             else:
-                rel_type = self.to_relationtype_id(input('Enter the name of the relation type: '), uni=uni)
+                rel_type = self.find_relationtype(input('Enter the name of the relation type: '), dir=(uni, not uni))
         if node1 is None:
             node1 = self.to_node_id(input('Enter the name of the first (origin) node: '))
             node2 = self.to_node_id(input('Enter the name of the second (target) node: '))
         elif uni:
-            if self.in_out(f"Is the new {self.backend.get_relation_type_name(rel_type, uni)}-relation incoming or outgoing to the current node ({node1.name})? "):
+            if self.in_out(f"Is the new {rel_type.name}-relation incoming or outgoing to the current node ({node1.name})? "):
                 node2 = node1.id
                 node1 = self.to_node_id(input('Enter the name of the origin node: '))
             else:
@@ -388,10 +402,18 @@ class KnowledgeNetFrontend:
             node1 = node1.id
             node2 = self.to_node_id(input('Enter the name of the other node: '))
 
+        input_text = '1'
+        if rel_type.probabilistic:
+            question = 'The relation type is probabilistic. Enter a certainty in [0  1). '
+            input_text = input(question)
+            while not input_text.replace('.', '').isnumeric() and 0 < float(input_text) <= 1:
+                input_text = input('Your input was invalid. ' + question)
+
         result = self.backend.add_relation(Relation.create_relation(is_uni=uni,
                                                                     node_from_id=node1,
                                                                     node_to_id=node2,
-                                                                    relation_type_id=rel_type))
+                                                                    probability=float(input_text),
+                                                                    relation_type_id=rel_type.id))
         print(result)
 
     def relations_between(self, args):
@@ -449,18 +471,15 @@ class KnowledgeNetFrontend:
             return node.id
         return None
 
-    def find_relationtype_id(self, name: Union[ObjectId, str], exit_on_err: bool = True) -> Tuple[Optional[bool], Optional[ObjectId]]:
-        if type(name) == ObjectId:
-            if self.backend.uni_rel_type_coll.find({'_id': name}).limit(1).size():
-                uni = True
-            elif self.backend.bi_rel_type_coll.find({'_id': name}).limit(1).size():
-                uni = False
-            else:
-                uni = None
-            return uni, name
-        types: List[RelationType] = self.backend.list_relationtypes_by_name(name, uni=True)
-        uni_count = len(types)
-        types += self.backend.list_relationtypes_by_name(name, uni=False)
+    def find_relationtype(self, name: Union[ObjectId, str], dir: Tuple[bool, bool] = (True, True), exit_on_err: bool = True) -> Tuple[Optional[bool], Optional[RelationType]]:
+        uni_count = 0
+        types: List[RelationType] = list()
+        if dir[0]:
+            types += self.backend.list_relationtypes_by_name(name, uni=True)
+            uni_count += len(types)
+        if dir[1]:
+            types += self.backend.list_relationtypes_by_name(name, uni=False)
+
         if not types:
             print('There is no relation type known by the name \"{}\"'.format(name))
             if exit_on_err:
@@ -468,11 +487,25 @@ class KnowledgeNetFrontend:
                 sys.exit()
             return None, None
         if len(types) == 1:
-            return (uni_count > 0), types[0].id
+            return (uni_count > 0), types[0]
 
         # Nodes is long. This means that there are multiple nodes by that name
         uni, selection = self.select_relationtype(types, uni_count)
-        return uni, types[selection].id
+        return uni, types[selection]
+
+    def find_relationtype_id(self, name: Union[ObjectId, str], dir: Tuple[bool, bool] = (True, True), exit_on_err: bool = True) -> Tuple[Optional[bool], Optional[ObjectId]]:
+        if type(name) == ObjectId:
+            if dir[0] and self.backend.uni_rel_type_coll.find({'_id': name}).limit(1).size():
+                uni = True
+            elif dir[1] and self.backend.bi_rel_type_coll.find({'_id': name}).limit(1).size():
+                uni = False
+            else:
+                uni = None
+            return uni, name
+        uni, rel_type = self.find_relationtype(name, dir, exit_on_err)
+        if not rel_type:
+            return None, None
+        return uni, rel_type.id
 
     def to_relationtype_id(self, name: Union[ObjectId, str], uni: bool, exit_on_err: bool = True) -> Optional[ObjectId]:
         if type(name) == ObjectId:

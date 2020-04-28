@@ -114,14 +114,20 @@ class MongoBackend:
         relations = self.get_relation_objects_of_node(node_id)
         return {
             'in_relations': [{
+                'id': relation.id,
+                'prob': relation.probability,
                 'type': RelationType.from_dict(self.uni_rel_type_coll.find_one({'_id': relation.type})),
                 'from': Node.from_dict(self.node_coll.find_one({'_id': relation.node_from}))
             } for relation in relations['in_relations']],
             'out_relations': [{
+                'id': relation.id,
+                'prob': relation.probability,
                 'type': RelationType.from_dict(self.uni_rel_type_coll.find_one({'_id': relation.type})),
                 'to': Node.from_dict(self.node_coll.find_one({'_id': relation.node_to}))
             } for relation in relations['out_relations']],
             'bi_relations': [{
+                'id': relation.id,
+                'prob': relation.probability,
                 'type': RelationType.from_dict(self.bi_rel_type_coll.find_one({'_id': relation.type})),
                 'with': Node.from_dict(self.node_coll.find_one({'_id': relation.node_1}))
                 if relation.node_1 != node_id
