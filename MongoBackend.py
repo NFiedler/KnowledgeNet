@@ -1,7 +1,10 @@
 import pymongo
 from bson import ObjectId
-from typing import List, Set, Dict, Tuple, Optional
+from typing import List, Set, Dict, Tuple, Optional, Union
 import KnowledgeNetExceptions
+from NetElements.Nodes.Node import Node
+from NetElements.Relations.Relations import BiRelation, UniRelation, Relation, RelationType
+
 
 class MongoBackend:
     def __init__(self, db_path, db_name='world'):
@@ -13,36 +16,16 @@ class MongoBackend:
         self.uni_rel_type_coll = self.db['uni_relation_types']
         self.bi_rel_type_coll = self.db['bi_relation_types']
 
-    def add_uni_rel_type(self, type_name: str, type_description: str = '', reflexive: bool = False):
-        result = self.uni_rel_type_coll.insert_one(
-            {
-                'name': type_name,
-                'description': type_description,
-                'values': {},
-                'is_uni': True,
-                'reflexive': reflexive,
-            })
+    def add_rel_type(self, rel_type: RelationType) -> ObjectId:
+        if rel_type.is_uni:
+            result = self.uni_rel_type_coll.insert_one(rel_type.to_dict())
+        else:
+            result = self.bi_rel_type_coll.insert_one(rel_type.to_dict())
         return result.inserted_id
 
-    def add_bi_rel_type(self, type_name: str, type_description: str = '', reflexive: bool = False):
-        result = self.bi_rel_type_coll.insert_one(
-            {
-                'name': type_name,
-                'description': type_description,
-                'values': {},
-                'is_uni': False,
-                'reflexive': reflexive,
-            })
-        return result.inserted_id
-
-    def add_node(self, node_name, node_description=''):
+    def add_node(self, node: Node) -> ObjectId:
         # TODO: prevent allowing node names which could be an object id
-        result = self.node_coll.insert_one({
-            'name': node_name,
-            'description': node_description,
-            'in_relations': [],
-            'out_relations': [],
-            'bi_relations': []})
+        result = self.node_coll.insert_one(node.to_dict())
         return result.inserted_id
 
     def delete_node(self, node_id: ObjectId) -> None:
@@ -55,54 +38,33 @@ class MongoBackend:
         self.bi_rel_coll.delete_many({'_id': {'$in': relations['bi_relations']}})
         self.node_coll.delete_one({'_id': node_id})
 
-    def add_nodes(self, node_names):
-        result = self.node_coll.insert_many(
-            [{
-                'name': node_name,
-                'description': '',
-                'in_relations': [],
-                'out_relations': [],
-                'bi_relations': []
-            } for node_name in node_names])
+    def add_nodes(self, nodes):
+        result = self.node_coll.insert_many([node.to_dict() for node in nodes])
         return result.inserted_ids
 
-    def add_uni_relation(self, node_from_id, node_to_id, relation_type_id):
-        if node_from_id == node_to_id and not self.uni_rel_type_coll.find_one({'_id': relation_type_id})['reflexive']:
-            raise KnowledgeNetExceptions.ReflexiveException(
-                'Tried to apply a reflexive relation of non-reflexive relation type!'
-            )
-        new_relation = self.uni_rel_coll.insert_one({
-            'type': relation_type_id,
-            'node_from': node_from_id,
-            'node_to': node_to_id,
-            'is_uni': True
-        })
-        relation_id = new_relation.inserted_id
-        self.node_coll.update_one({'_id': node_from_id}, {'$push': {'out_relations': relation_id}})
-        self.node_coll.update_one({'_id': node_to_id}, {'$push': {'in_relations': relation_id}})
-        return relation_id
+    def add_relation(self, relation: Union[UniRelation, BiRelation]):
 
-    def add_bi_relation(self, node_1_id, node_2_id, relation_type_id):
-        if node_1_id == node_2_id and not self.bi_rel_type_coll.find_one({'_id': relation_type_id})['reflexive']:
+        if relation.node_1 == relation.node_2 and not self.bi_rel_type_coll.find_one({'_id': relation.type})['reflexive']:
             raise KnowledgeNetExceptions.ReflexiveException(
                 'Tried to apply a reflexive relation of non-reflexive relation type!'
             )
-        new_relation = self.bi_rel_coll.insert_one({
-            'type': relation_type_id,
-            'node_1': node_1_id,
-            'node_2': node_2_id,
-            'is_uni': False
-        })
-        relation_id = new_relation.inserted_id
-        self.node_coll.update_one({'_id': node_1_id}, {'$push': {'bi_relations': relation_id}})
-        self.node_coll.update_one({'_id': node_2_id}, {'$push': {'bi_relations': relation_id}})
+        if relation.is_uni:
+            new_relation = self.uni_rel_coll.insert_one(relation.to_dict())
+            relation_id = new_relation.inserted_id
+            self.node_coll.update_one({'_id': relation.node_from}, {'$push': {'out_relations': relation_id}})
+            self.node_coll.update_one({'_id': relation.node_to}, {'$push': {'in_relations': relation_id}})
+        else:
+            new_relation = self.bi_rel_coll.insert_one(relation.to_dict())
+            relation_id = new_relation.inserted_id
+            self.node_coll.update_one({'_id': relation.node_1}, {'$push': {'bi_relations': relation_id}})
+            self.node_coll.update_one({'_id': relation.node_2}, {'$push': {'bi_relations': relation_id}})
         return relation_id
 
     def get_node(self, node_id):
-        return self.node_coll.find_one({'_id': node_id})
+        return Node.from_dict(self.node_coll.find_one({'_id': node_id}))
 
     def get_nodes(self, node_ids):
-        return self.node_coll.find({'_id': {'$in': node_ids}})
+        return Node.from_dict_list(self.node_coll.find({'_id': {'$in': node_ids}}))
 
     def get_relation_type_name(self, rel_type_id: ObjectId, uni: bool) -> str:
         if uni:
@@ -124,39 +86,39 @@ class MongoBackend:
     def get_relation_objects_of_node(self, node_id):
         relations = self.get_relation_ids_of_node(node_id)
         return {
-            'in_relations': self.uni_rel_coll.find({'_id': {'$in': relations['in_relations']}}),
-            'out_relations': self.uni_rel_coll.find({'_id': {'$in': relations['out_relations']}}),
-            'bi_relations': self.bi_rel_coll.find({'_id': {'$in': relations['bi_relations']}})
+            'in_relations': Relation.from_dict_list(self.uni_rel_coll.find({'_id': {'$in': relations['in_relations']}})),
+            'out_relations': Relation.from_dict_list(self.uni_rel_coll.find({'_id': {'$in': relations['out_relations']}})),
+            'bi_relations': Relation.from_dict_list(self.bi_rel_coll.find({'_id': {'$in': relations['bi_relations']}}))
         }
 
 
     def list_nodes_by_name(self, node_name:str, sloppy: bool = False):
         if sloppy:
-            return list(self.node_coll.find({'name': {'$regex': node_name, '$options': 'i'}}))
-        return list(self.node_coll.find({'name': node_name}))
+            return Node.from_dict_list(self.node_coll.find({'name': {'$regex': node_name, '$options': 'i'}}))
+        return Node.from_dict_list(self.node_coll.find({'name': node_name}))
 
     def list_relationtypes_by_name(self, relation_type_name, uni):
         if uni:
-            return list(self.uni_rel_type_coll.find({'name': relation_type_name}))
+            return RelationType.from_dict_list(self.uni_rel_type_coll.find({'name': relation_type_name}))
         else:
-            return list(self.bi_rel_type_coll.find({'name': relation_type_name}))
+            return RelationType.from_dict_list(self.bi_rel_type_coll.find({'name': relation_type_name}))
 
-    def get_relation_info_of_node(self, node_id):
+    def get_relation_info_of_node(self, node_id) -> Dict:
         relations = self.get_relation_objects_of_node(node_id)
         return {
             'in_relations': [{
-                'type': self.uni_rel_type_coll.find_one({'_id': relation['type']}),
-                'from': self.node_coll.find_one({'_id': relation['node_from']})
+                'type': RelationType.from_dict(self.uni_rel_type_coll.find_one({'_id': relation.type})),
+                'from': Node.from_dict(self.node_coll.find_one({'_id': relation.node_from}))
             } for relation in relations['in_relations']],
             'out_relations': [{
-                'type': self.uni_rel_type_coll.find_one({'_id': relation['type']}),
-                'to': self.node_coll.find_one({'_id': relation['node_to']})
+                'type': RelationType.from_dict(self.uni_rel_type_coll.find_one({'_id': relation.type})),
+                'to': Node.from_dict(self.node_coll.find_one({'_id': relation.node_to}))
             } for relation in relations['out_relations']],
             'bi_relations': [{
-                'type': self.bi_rel_type_coll.find_one({'_id': relation['type']}),
-                'with': self.node_coll.find_one({'_id': relation['node_1']})
-                if relation['node_1'] != node_id
-                else self.node_coll.find_one({'_id': relation['node_2']})
+                'type': RelationType.from_dict(self.bi_rel_type_coll.find_one({'_id': relation.type})),
+                'with': Node.from_dict(self.node_coll.find_one({'_id': relation.node_1}))
+                if relation.node_1 != node_id
+                else Node.from_dict(self.node_coll.find_one({'_id': relation.node_2}))
             } for relation in relations['bi_relations']]
         }
 
@@ -243,7 +205,7 @@ class MongoBackend:
     def get_bi_relationtype_usage_number(self, relation_type_id: ObjectId) -> int:
         return self.bi_rel_coll.count({'type': relation_type_id})
 
-    def get_relations_between(self, node_1_id: ObjectId, node_2_id: ObjectId) -> Tuple[List[Dict], List[Dict]]:
+    def get_relations_between(self, node_1_id: ObjectId, node_2_id: ObjectId) -> Tuple[List[UniRelation], List[BiRelation]]:
         uni_relations = self.uni_rel_coll.find({'$or': [
             {
                 'node_from': node_1_id,
@@ -264,19 +226,19 @@ class MongoBackend:
                 'node_2': node_1_id
             }
         ]})
-        return list(uni_relations), list(bi_relations)
+        return Relation.from_dict_list(uni_relations), Relation.from_dict_list(bi_relations)
 
-    def get_uni_relationtypes(self, relation_ids: Optional[List[ObjectId]] = None):
+    def get_uni_relationtypes(self, relation_ids: Optional[List[ObjectId]] = None) -> List[RelationType]:
         if relation_ids is None:
-            return list(self.uni_rel_type_coll.find())
-        return self.uni_rel_type_coll.find({
+            return RelationType.from_dict_list(self.uni_rel_type_coll.find())
+        return RelationType.from_dict_list(self.uni_rel_type_coll.find({
             '_id': {'$in': relation_ids}
-        })
+        }))
 
-    def get_bi_relationtypes(self, relation_ids: Optional[List[ObjectId]] = None):
+    def get_bi_relationtypes(self, relation_ids: Optional[List[ObjectId]] = None) -> List[RelationType]:
         if relation_ids is None:
-            return list(self.bi_rel_type_coll.find())
-        return list(self.bi_rel_type_coll.find({
+            return RelationType.from_dict_list(self.bi_rel_type_coll.find())
+        return RelationType.from_dict_list(self.bi_rel_type_coll.find({
             '_id': {'$in': relation_ids}
         }))
 

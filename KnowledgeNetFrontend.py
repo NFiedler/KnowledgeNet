@@ -2,6 +2,9 @@
 from MongoBackend import *
 from bson import ObjectId
 
+from NetElements.Nodes.Node import Node
+from NetElements.Relations.Relations import BiRelation, UniRelation, Relation, RelationType
+
 from enum import IntEnum
 from typing import Union, List, Dict
 import argparse
@@ -81,7 +84,7 @@ class KnowledgeNetFrontend:
             }
         ]
 
-        self.backend = b
+        self.backend: MongoBackend = b
         parser = argparse.ArgumentParser(prog='KnowledgeNet UI')
         # parser.add_argument('--foo', action='store_true', help='foo help')
         subparsers = parser.add_subparsers(help='command groups')
@@ -167,13 +170,13 @@ class KnowledgeNetFrontend:
             print('Unidirectional relation types:')
             self.print_line('-')
             for uni_type in self.backend.get_uni_relationtypes():
-                print(f'{uni_type["name"]}: {uni_type["description"]}')
+                print(f'{uni_type.name}: {uni_type.description}')
             print()
         if args.bi:
             print('Bidirectional relation types:')
             self.print_line('-')
             for bi_type in self.backend.get_bi_relationtypes():
-                print(f'{bi_type["name"]}: {bi_type["description"]}')
+                print(f'{bi_type.name}: {bi_type.description}')
 
     def create_node(self, args=None):
         if args is not None:
@@ -215,6 +218,7 @@ class KnowledgeNetFrontend:
         self.node_detail_loop(node)
 
     def node_relations(self, args):
+        #TODO: Fix this
         node = str(args.node_name)
         if node == '':
             node = input('Which node do you want to learn about? ')
@@ -225,15 +229,15 @@ class KnowledgeNetFrontend:
             directed, not_directed = args.dir, args.ndir
             if directed == not_directed:
                 directed = self.yes_no('Do you want to consider the relation direction? ')
-            node_ids = self.backend.get_all_uni_connected_nodes(node['_id'], relation_type_id, include_direction=directed)
+            node_ids = self.backend.get_all_uni_connected_nodes(node.id, relation_type_id, include_direction=directed)
         else:
-            node_ids = self.backend.get_all_bi_connected_nodes(node['_id'], relation_type_id)
-        nodes: List[Dict] = list(self.backend.get_nodes(node_ids))
+            node_ids = self.backend.get_all_bi_connected_nodes(node.id, relation_type_id)
+        nodes: List[Node] = self.backend.get_nodes(node_ids)
         self.print_line()
-        print(f'Nodes connected to {node["name"]}: ')
+        print(f'Nodes connected to {node.name}: ')
         self.print_line('-')
         for i, node in enumerate(nodes):
-            print(f'{i} - {node["name"]}: {node["description"]}')
+            print(f'{i} - {node.name}: {node.description}')
         print()
         selection = input('If you want to see a node in detail, enter the number in front of it. Otherwise type \'q\'.\n')
         follow_node = None
@@ -242,7 +246,7 @@ class KnowledgeNetFrontend:
             if selection == 'q':
                 return None
             if selection.isdigit() and int(selection) < len(nodes):
-                follow_node = list(nodes)[int(selection)]['_id']
+                follow_node = list(nodes)[int(selection)].id
             else:
                 selection = input('Your input was invalid. If you want to  see a node in detail, enter the number in front of it. Otherwise type \'q\'.\n')
         self.node_detail_loop(follow_node)
@@ -261,9 +265,13 @@ class KnowledgeNetFrontend:
             elif action == MenuAction.CREATE_RELATION:
                 self.create_relation(node1=node)
                 action = MenuAction.NODE_DETAIL
+            elif action == MenuAction.CREATE_RELATION_TYPE:
+                self.create_relationtype()
+                print('Created relation type!')
+                action = MenuAction.NODE_DETAIL
             elif action == MenuAction.DELETE_NODE:
                 if self.yes_no('Do you really want to delete this node and all connected relations? '):
-                    self.backend.delete_node(node['_id'])
+                    self.backend.delete_node(node.id)
                     action = MenuAction.QUIT
                 else:
                     action = MenuAction.NODE_DETAIL
@@ -271,20 +279,21 @@ class KnowledgeNetFrontend:
                 self.print_menu_action_help()
                 action = MenuAction.ASK
 
-    def node_detail(self, node: dict, ask: bool = False) -> Tuple[Optional[int], int]:
+    def node_detail(self, node: Node, ask: bool = False) -> Tuple[Optional[int], int]:
 
-        relation_info = self.backend.get_relation_info_of_node(node['_id'])
+        relation_info = self.backend.get_relation_info_of_node(node.id)
         relation_counter = 0
-        related_node_ids = [rel['from']['_id'] for rel in relation_info['in_relations']] + \
-                           [rel['to']['_id'] for rel in relation_info['out_relations']] + \
-                           [rel['with']['_id'] for rel in relation_info['bi_relations']]
+        related_node_ids = [rel['from'].id for rel in relation_info['in_relations']] + \
+                           [rel['to'].id for rel in relation_info['out_relations']] + \
+                           [rel['with'].id for rel in relation_info['bi_relations']]
         if not ask:
             self.print_line()
-            print(node['name'])
+            print(node.name)
             self.print_line('-')
-            for key in node.keys():
+            node_dict = node.to_dict()
+            for key in node_dict.keys():
                 if 'relations' not in key:
-                    print('{}: {}'.format(key, node[key]))
+                    print('{}: {}'.format(key, node_dict[key]))
         if relation_info['in_relations']:
             if not ask:
                 print('in_relations: ')
@@ -292,8 +301,8 @@ class KnowledgeNetFrontend:
                 if not ask:
                     print('\t{} - \"{}\" from \"{}\"'.format(
                         relation_counter,
-                        relation['type']['name'],
-                        relation['from']['name']))
+                        relation['type'].name,
+                        relation['from'].name))
                 relation_counter += 1
         if relation_info['out_relations']:
             if not ask:
@@ -302,8 +311,8 @@ class KnowledgeNetFrontend:
                 if not ask:
                     print('\t{} - \"{}\" to \"{}\"'.format(
                         relation_counter,
-                        relation['type']['name'],
-                        relation['to']['name']))
+                        relation['type'].name,
+                        relation['to'].name))
                 relation_counter += 1
         if relation_info['bi_relations']:
             if not ask:
@@ -312,8 +321,8 @@ class KnowledgeNetFrontend:
                 if not ask:
                     print('\t{} - \"{}\" with \"{}\"'.format(
                         relation_counter,
-                        relation['type']['name'],
-                        relation['with']['name']))
+                        relation['type'].name,
+                        relation['with'].name))
                 relation_counter += 1
         # if relation_counter == 0:
         #     return None
@@ -327,19 +336,21 @@ class KnowledgeNetFrontend:
             if selection == 'q':
                 return None, MenuAction.QUIT
             if selection == 'n':
-                return node['_id'], MenuAction.CREATE_NODE
+                return node.id, MenuAction.CREATE_NODE
             if selection == 'r':
-                return node['_id'], MenuAction.CREATE_RELATION
+                return node.id, MenuAction.CREATE_RELATION
+            if selection == 't':
+                return node.id, MenuAction.CREATE_RELATION_TYPE
             if selection == 'd':
-                return node['_id'], MenuAction.DELETE_NODE
+                return node.id, MenuAction.DELETE_NODE
             if selection == '?':
-                return node['_id'], MenuAction.HELP
+                return node.id, MenuAction.HELP
             if (selection.isdigit() and int(selection) < relation_counter) or \
                     (selection[0] == '+' and selection[1:].isdigit() and int(selection[1:]) < relation_counter):
                 return related_node_ids[int(selection)], MenuAction.NODE_DETAIL
             selection = input('Your input was invalid. ' + follow_sentence)
             
-    def create_relation(self, args=None, node1: Dict = None, node2: Dict = None):
+    def create_relation(self, args=None, node1: Node = None, node2: Node = None):
         if args is None:
             uni, rel_type = self.find_relationtype_id(input('Enter the name of the relation type: '))
         else:
@@ -352,23 +363,24 @@ class KnowledgeNetFrontend:
             node1 = self.to_node_id(input('Enter the name of the first (origin) node: '))
             node2 = self.to_node_id(input('Enter the name of the second (target) node: '))
         elif uni:
-            if self.in_out(f"Is the new {self.backend.get_relation_type_name(rel_type, uni)}-relation incoming or outgoing to the current node ({node1['name']})? "):
-                node2 = node1['_id']
+            if self.in_out(f"Is the new {self.backend.get_relation_type_name(rel_type, uni)}-relation incoming or outgoing to the current node ({node1.name})? "):
+                node2 = node1.id
                 node1 = self.to_node_id(input('Enter the name of the origin node: '))
             else:
-                node1 = node1['_id']
+                node1 = node1.id
                 node2 = self.to_node_id(input('Enter the name of the target node: '))
         else:
-            node1 = node1['_id']
+            node1 = node1.id
             node2 = self.to_node_id(input('Enter the name of the other node: '))
 
-        if uni:
-            result = self.backend.add_uni_relation(node1, node2, rel_type)
-        else:
-            result = self.backend.add_bi_relation(node1, node2, rel_type)
+        result = self.backend.add_relation(Relation.create_relation(is_uni=uni,
+                                                                    node_from_id=node1,
+                                                                    node_to_id=node2,
+                                                                    relation_type_id=rel_type))
         print(result)
 
     def relations_between(self, args):
+        # TODO: Fix this mess
         node_1_id = self.to_node_id(input('Enter the name of the first node: '))
         node_2_id = self.to_node_id(input('Enter the name of the second node: '))
         uni_relations, bi_relations = self.backend.get_relations_between(node_1_id, node_2_id)
@@ -376,20 +388,24 @@ class KnowledgeNetFrontend:
         if args.uni:
             print('Unidirectional relations:')
             self.print_line('-')
-            for uni_relation in zip(self.backend.get_uni_relationtypes([rel['_id'] for rel in uni_relations]), uni_relations):
-                print(f'{uni_relation[0]["name"]}: {uni_relation[1]["id"]}')
+            for uni_relation in zip(self.backend.get_uni_relationtypes([rel.id for rel in uni_relations]), uni_relations):
+                print(f'{uni_relation[0].name}: {uni_relation[1].id}')
             print()
         if args.bi:
             print('Bidirectional relations:')
             self.print_line('-')
-            for bi_relation in zip(self.backend.get_bi_relationtypes([rel['_id'] for rel in bi_relations]), bi_relations):
-                print(f'{bi_relation[0]["name"]}: {bi_relation[1]["id"]}')
+            for bi_relation in zip(self.backend.get_bi_relationtypes([rel.id for rel in bi_relations]), bi_relations):
+                print(f'{bi_relation[0].name}: {bi_relation[1].id}')
 
-    def to_node(self, name: Union[str, ObjectId, Dict], exit_on_err: bool = True) -> Optional[Dict]:
+    def to_node(self, name: Union[str, ObjectId, Dict, Node], exit_on_err: bool = True) -> Optional[Node]:
         if type(name) == ObjectId:
             return self.backend.get_node(name)
         if type(name) == dict:
+            return Node.from_dict(name)
+        if type(name) == Node:
             return name
+
+        # so it has to be str:
         nodes = self.backend.list_nodes_by_name(name)
         if not nodes:
             print('There is no node known by the name \"{}\"'.format(name))
@@ -403,26 +419,20 @@ class KnowledgeNetFrontend:
         # Nodes is long. This means that there are multiple nodes by that name
         return nodes[int(self.select_node(nodes))]
 
-    def to_node_id(self, name: Union[str, ObjectId, Dict], exit_on_err: bool = True) -> ObjectId:
+    def to_node_id(self, name: Union[str, ObjectId, Dict, Node], exit_on_err: bool = True) -> Optional[ObjectId]:
         # TODO: include id in query
         if type(name) == dict:
             return name['_id']
         if type(name) == ObjectId:
             return name
-        nodes = self.backend.list_nodes_by_name(name)
-        if not nodes:
-            nodes
-        if not nodes:
-            print('There is no node known by the name \"{}\"'.format(name))
-            if exit_on_err:
-                print('Exiting...')
-                sys.exit()
-            return None
-        if len(nodes) == 1:
-            return nodes[0]['_id']
+        if type(name) == Node and name.id is not None:
+            return name.id
 
-        # Nodes is long. This means that there are multiple nodes by that name
-        return nodes[int(self.select_node(nodes))]['_id']
+        # now a node has to be searched anyways...
+        node = self.to_node(name, exit_on_err=exit_on_err)
+        if node:
+            return node.id
+        return None
 
     def find_relationtype_id(self, name: Union[ObjectId, str], exit_on_err: bool = True) -> Tuple[Optional[bool], Optional[ObjectId]]:
         if type(name) == ObjectId:
@@ -433,7 +443,7 @@ class KnowledgeNetFrontend:
             else:
                 uni = None
             return uni, name
-        types = self.backend.list_relationtypes_by_name(name, uni=True)
+        types: List[RelationType] = self.backend.list_relationtypes_by_name(name, uni=True)
         uni_count = len(types)
         types += self.backend.list_relationtypes_by_name(name, uni=False)
         if not types:
@@ -443,16 +453,16 @@ class KnowledgeNetFrontend:
                 sys.exit()
             return None, None
         if len(types) == 1:
-            return (uni_count > 0), types[0]['_id']
+            return (uni_count > 0), types[0].id
 
         # Nodes is long. This means that there are multiple nodes by that name
         uni, selection = self.select_relationtype(types, uni_count)
-        return uni, types[selection]['_id']
+        return uni, types[selection].id
 
-    def to_relationtype_id(self, name: Union[ObjectId, str], uni: bool, exit_on_err: bool = True) -> ObjectId:
+    def to_relationtype_id(self, name: Union[ObjectId, str], uni: bool, exit_on_err: bool = True) -> Optional[ObjectId]:
         if type(name) == ObjectId:
             return name
-        types = self.backend.list_relationtypes_by_name(name, uni=uni)
+        types: List[RelationType] = self.backend.list_relationtypes_by_name(name, uni=uni)
         if not types:
             print('There is no relation type known by the name \"{}\"'.format(name))
             if exit_on_err:
@@ -460,33 +470,34 @@ class KnowledgeNetFrontend:
                 sys.exit()
             return None
         if len(types) == 1:
-            return types[0]['_id']
+            return types[0].id
 
         # Nodes is long. This means that there are multiple nodes by that name
         return types[int(self.select_relationtype(types))]['_id']
 
-    def select_node(self, nodes: List[Dict]) -> int:
-        print('There exist multiple nodes with the name \"{}\": '.format(nodes[0]['name']))
+    def select_node(self, nodes: List[Node]) -> int:
+        print('There exist multiple nodes with the name \"{}\": '.format(nodes[0].name))
         for i, node in enumerate(nodes):
-            print('{} - {}: {}'.format(i, node['name'], node['description']))
+            print('{} - {}: {}'.format(i, node.name, node.description))
         selection = ''
         while not selection.isdigit() or len(nodes) <= int(selection):
             selection = input('Enter your selection: ')
         return int(selection)
 
-    def select_relationtype(self, types: List[dict], uni_count=-1):
+    def select_relationtype(self, types: List[RelationType], uni_count=-1):
         print('There exist multiple relation types with the name \"{}\": '.format(types[0]['name']))
         rel_type_group = ''
         for i, type in enumerate(types):
+            usage_count = ''
             if uni_count >= 0:
                 if i < uni_count:
                     rel_type_group = '[uni]'
-                    usage_count = ' (used in {} relations)'.format(self.backend.get_uni_relationtype_usage_number(type['_id']))
+                    usage_count = ' (used in {} relations)'.format(self.backend.get_uni_relationtype_usage_number(type.id))
                 else:
                     rel_type_group = '[bi]'
-                    usage_count = ' (used in {} relations)'.format(self.backend.get_bi_relationtype_usage_number(type['_id']))
+                    usage_count = ' (used in {} relations)'.format(self.backend.get_bi_relationtype_usage_number(type.id))
 
-            print('{} - {} {}: {}{}'.format(i, type['name'], rel_type_group, type['description'], usage_count))
+            print('{} - {} {}: {}{}'.format(i, type.name, rel_type_group, type.description, usage_count))
         selection = ''
         while not selection.isdigit() or len(types) < int(selection):
             selection = input('Enter your selection: ')

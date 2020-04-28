@@ -40,6 +40,10 @@ class Node:
             object_id=node_dict['_id'],
         )
 
+    @classmethod
+    def from_dict_list(cls, node_dict_list):
+        return [cls.from_dict(node_dict) for node_dict in node_dict_list]
+
     def to_dict(self, include_id: bool = False):
         node_dict = {
             'name': self.name,

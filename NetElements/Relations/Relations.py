@@ -41,6 +41,10 @@ class RelationType:
                 reflexive=relation_type_dict['reflexive'],
         )
 
+    @classmethod
+    def from_dict_list(cls, relation_type_dict_list: List[Dict]):
+        return [cls.from_dict(relation_type_dict) for relation_type_dict in relation_type_dict_list]
+
     def to_dict(self, include_id: bool = False) -> Dict:
         relation_type_dict = {
             'name': self.name,
@@ -63,7 +67,33 @@ class Relation:
         if relation_dict['is_uni']:
             return UniRelation.from_dict(relation_dict)
         else:
-            return UniRelation.from_dict(relation_dict)
+            return BiRelation.from_dict(relation_dict)
+
+    @classmethod
+    def from_dict_list(cls, relation_dict_list: List[Dict]):
+        return [cls.from_dict(relation_dict) for relation_dict in relation_dict_list]
+
+    @classmethod
+    def create_relation(cls,
+                        is_uni: bool,
+                        relation_type_id: ObjectId,
+                        node_from_id: ObjectId,
+                        node_to_id: ObjectId,
+                        relation_id: Optional[ObjectId] = None,
+                        ):
+        if is_uni:
+            return UniRelation(relation_type_id=relation_type_id,
+                               node_from_id=node_from_id,
+                               node_to_id=node_to_id,
+                               relation_id=relation_id)
+        else:
+            return BiRelation(relation_type_id=relation_type_id,
+                              node_1_id=node_from_id,
+                              node_2_id=node_to_id,
+                              relation_id=relation_id)
+
+
+
 
 
 class UniRelation:
@@ -150,7 +180,7 @@ class BiRelation:
     def to_dict(self, include_id: bool = False) -> Dict:
         rel_dict = {
             'type': self.type,
-            'node_from': self.node_1,
+            'node_1': self.node_1,
             'node_2': self.node_2,
             'is_uni': self.is_uni
         }
